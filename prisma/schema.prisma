@@ -1,0 +1,72 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id       Int     @id @default(autoincrement())
+  name     String  @unique
+  password String
+  isAdmin  Boolean @default(false)
+  picks    Pick[]
+}
+
+model Team {
+  id        Int        @id @default(autoincrement())
+  club      String     @unique
+  homeGames Schedule[] @relation("HomeTeam")
+  awayGames Schedule[] @relation("AwayTeam")
+}
+
+model Season {
+  id         Int         @id @default(autoincrement())
+  year       Int         @unique
+  matchweeks Matchweek[]
+  schedules  Schedule[]
+}
+
+model Matchweek {
+  id        Int        @id @default(autoincrement())
+  week      Int
+  status    String     @default("open")
+  seasonId  Int
+  season    Season     @relation(fields: [seasonId], references: [id])
+  schedules Schedule[]
+
+  @@unique([seasonId, week])
+}
+
+model Schedule {
+  id          Int       @id @default(autoincrement())
+  seasonId    Int
+  matchweekId Int
+  gameNumber  Int
+  homeTeamId  Int
+  awayTeamId  Int
+  homeScore   Int?
+  awayScore   Int?
+  season      Season    @relation(fields: [seasonId], references: [id])
+  matchweek   Matchweek @relation(fields: [matchweekId], references: [id])
+  homeTeam    Team      @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam    Team      @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  picks       Pick[]
+
+  @@unique([matchweekId, gameNumber])
+}
+
+model Pick {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  scheduleId Int
+  homeScore  Int?
+  awayScore  Int?
+  points     Int?
+  user       User     @relation(fields: [userId], references: [id])
+  schedule   Schedule @relation(fields: [scheduleId], references: [id])
+
+  @@unique([userId, scheduleId])
+}
