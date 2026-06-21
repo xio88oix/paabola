@@ -1,6 +1,9 @@
 import { prisma } from "@/lib/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+// Reads live data from the database; never prerender at build time.
+export const dynamic = "force-dynamic";
+
 export default async function AdminDashboard() {
   const [userCount, teamCount, seasonCount, pickCount] = await Promise.all([
     prisma.user.count(),

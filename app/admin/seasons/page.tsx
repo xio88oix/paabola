@@ -3,6 +3,13 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -17,14 +24,15 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 
-interface Season { id: number; year: number }
+interface Season { id: number; year: string; status: string }
 
 export default function SeasonsPage() {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Season | null>(null);
-  const [year, setYear] = useState("");
+  const [form, setForm] = useState({ year: "", status: "open" });
 
   async function load() {
     const res = await fetch("/api/admin/seasons");
@@ -35,13 +43,13 @@ export default function SeasonsPage() {
 
   function openCreate() {
     setEditing(null);
-    setYear("");
+    setForm({ year: "", status: "open" });
     setOpen(true);
   }
 
   function openEdit(s: Season) {
     setEditing(s);
-    setYear(String(s.year));
+    setForm({ year: s.year, status: s.status });
     setOpen(true);
   }
 
@@ -50,13 +58,13 @@ export default function SeasonsPage() {
       await fetch("/api/admin/seasons", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: editing.id, year: parseInt(year) }),
+        body: JSON.stringify({ id: editing.id, year: form.year, status: form.status }),
       });
     } else {
       await fetch("/api/admin/seasons", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ year: parseInt(year) }),
+        body: JSON.stringify({ year: form.year, status: form.status }),
       });
     }
     setOpen(false);
@@ -84,6 +92,7 @@ export default function SeasonsPage() {
         <TableHeader>
           <TableRow>
             <TableHead>Year</TableHead>
+            <TableHead>Status</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -91,6 +100,9 @@ export default function SeasonsPage() {
           {seasons.map((s) => (
             <TableRow key={s.id}>
               <TableCell>{s.year}</TableCell>
+              <TableCell>
+                <Badge variant={s.status === "open" ? "default" : "outline"}>{s.status}</Badge>
+              </TableCell>
               <TableCell className="text-right space-x-2">
                 <Button variant="outline" size="sm" onClick={() => openEdit(s)}>Edit</Button>
                 <Button variant="destructive" size="sm" onClick={() => remove(s.id)}>Delete</Button>
@@ -105,14 +117,25 @@ export default function SeasonsPage() {
           <DialogHeader>
             <DialogTitle>{editing ? "Edit Season" : "Add Season"}</DialogTitle>
           </DialogHeader>
-          <div>
-            <label className="text-sm font-medium">Year</label>
-            <Input
-              type="number"
-              value={year}
-              onChange={(e) => setYear(e.target.value)}
-              placeholder="2026"
-            />
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm font-medium">Year</label>
+              <Input
+                value={form.year}
+                onChange={(e) => setForm({ ...form, year: e.target.value })}
+                placeholder="2026/27"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Status</label>
+              <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="open">open</SelectItem>
+                  <SelectItem value="closed">closed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>

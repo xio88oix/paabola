@@ -12,10 +12,14 @@ export default async function SummaryPage() {
     orderBy: { name: "asc" },
   });
 
-  const completedMatchweeks = await prisma.matchweek.findMany({
-    where: { status: "completed", season: { year: 2026 } },
-    orderBy: { week: "asc" },
-  });
+  const season = await prisma.season.findFirst({ where: { status: "open" } });
+
+  const completedMatchweeks = season
+    ? await prisma.matchweek.findMany({
+        where: { status: "completed", seasonId: season.id },
+        orderBy: { week: "asc" },
+      })
+    : [];
 
   // Build summary: for each user, for each completed matchweek, sum points
   const summaryData: Record<number, Record<number, number>> = {};

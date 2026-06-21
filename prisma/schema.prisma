@@ -16,16 +16,20 @@ model User {
 }
 
 model Team {
-  id        Int        @id @default(autoincrement())
-  club      String     @unique
-  homeGames Schedule[] @relation("HomeTeam")
-  awayGames Schedule[] @relation("AwayTeam")
+  id         Int        @id @default(autoincrement())
+  club       String     @unique
+  logo       String?
+  externalId Int?       @unique
+  homeGames  Schedule[] @relation("HomeTeam")
+  awayGames  Schedule[] @relation("AwayTeam")
 }
 
 model Season {
   id         Int         @id @default(autoincrement())
-  year       Int         @unique
+  year       String      @unique
+  status     String      @default("open")
   matchweeks Matchweek[]
+  betweeks   BetWeek[]
   schedules  Schedule[]
 }
 
@@ -40,10 +44,23 @@ model Matchweek {
   @@unique([seasonId, week])
 }
 
+model BetWeek {
+  id        Int        @id @default(autoincrement())
+  week      Int
+  status    String     @default("open")
+  seasonId  Int
+  season    Season     @relation(fields: [seasonId], references: [id])
+  schedules Schedule[]
+
+  @@unique([seasonId, week])
+}
+
 model Schedule {
   id          Int       @id @default(autoincrement())
   seasonId    Int
   matchweekId Int
+  betWeekId   Int
+  externalId  Int?      @unique
   gameNumber  Int
   homeTeamId  Int
   awayTeamId  Int
@@ -51,11 +68,18 @@ model Schedule {
   awayScore   Int?
   season      Season    @relation(fields: [seasonId], references: [id])
   matchweek   Matchweek @relation(fields: [matchweekId], references: [id])
+  betWeek     BetWeek   @relation(fields: [betWeekId], references: [id])
   homeTeam    Team      @relation("HomeTeam", fields: [homeTeamId], references: [id])
   awayTeam    Team      @relation("AwayTeam", fields: [awayTeamId], references: [id])
   picks       Pick[]
 
   @@unique([matchweekId, gameNumber])
+}
+
+model ScoringConfig {
+  id                  Int @id @default(1)
+  exactScorePoints    Int @default(10)
+  correctResultPoints Int @default(4)
 }
 
 model Pick {

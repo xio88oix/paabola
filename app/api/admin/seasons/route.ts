@@ -17,15 +17,18 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const { year } = await req.json();
-  const season = await prisma.season.create({ data: { year } });
+  const { year, status } = await req.json();
+  const season = await prisma.season.create({ data: { year, status: status ?? "open" } });
   return NextResponse.json(season);
 }
 
 export async function PUT(req: NextRequest) {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const { id, year } = await req.json();
-  const season = await prisma.season.update({ where: { id }, data: { year } });
+  const { id, year, status } = await req.json();
+  const season = await prisma.season.update({
+    where: { id },
+    data: { year, ...(status !== undefined ? { status } : {}) },
+  });
   return NextResponse.json(season);
 }
 

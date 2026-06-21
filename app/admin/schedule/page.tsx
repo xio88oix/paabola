@@ -25,9 +25,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
-interface Team { id: number; club: string }
+interface Team { id: number; club: string; logo?: string | null }
 interface Matchweek { id: number; week: number; seasonId: number }
-interface Season { id: number; year: number }
+interface BetWeek { id: number; week: number; seasonId: number }
+interface Season { id: number; year: string; status: string }
 interface Schedule {
   id: number;
   gameNumber: number;
@@ -35,16 +36,31 @@ interface Schedule {
   awayTeam: Team;
   homeScore: number | null;
   awayScore: number | null;
+  betWeek?: BetWeek | null;
+}
+
+function TeamCell({ team }: { team: Team }) {
+  return (
+    <div className="flex items-center gap-2">
+      {team.logo && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={team.logo} alt={team.club} width={20} height={20} className="h-5 w-5 object-contain" />
+      )}
+      <span>{team.club}</span>
+    </div>
+  );
 }
 
 export default function SchedulePage() {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [matchweeks, setMatchweeks] = useState<Matchweek[]>([]);
+  const [betweeks, setBetweeks] = useState<BetWeek[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState<string>("");
   const [selectedMwId, setSelectedMwId] = useState<string>("");
   const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<Schedule | null>(null);
   const [form, setForm] = useState({
     homeTeamId: "",
@@ -52,6 +68,7 @@ export default function SchedulePage() {
     homeScore: "",
     awayScore: "",
     gameNumber: "",
+    betWeekId: "",
   });
 
   async function loadBase() {
@@ -62,13 +79,20 @@ export default function SchedulePage() {
     const s: Season[] = await sRes.json();
     setSeasons(s);
     setTeams(await tRes.json());
-    if (s.length > 0) setSelectedSeasonId(s[0].id.toString());
+    if (s.length > 0) {
+      const openSeason = s.find((x) => x.status === "open") ?? s[0];
+      setSelectedSeasonId(openSeason.id.toString());
+    }
   }
 
-  async function loadMatchweeks(seasonId: string) {
-    const res = await fetch(`/api/admin/matchweeks?seasonId=${seasonId}`);
-    const mws: Matchweek[] = await res.json();
+  async function loadWeeks(seasonId: string) {
+    const [mwRes, bwRes] = await Promise.all([
+      fetch(`/api/admin/matchweeks?seasonId=${seasonId}`),
+      fetch(`/api/admin/betweeks?seasonId=${seasonId}`),
+    ]);
+    const mws: Matchweek[] = await mwRes.json();
     setMatchweeks(mws);
+    setBetweeks(await bwRes.json());
     if (mws.length > 0) setSelectedMwId(mws[0].id.toString());
     else setSelectedMwId("");
   }
@@ -80,8 +104,15 @@ export default function SchedulePage() {
   }
 
   useEffect(() => { loadBase(); }, []);
-  useEffect(() => { if (selectedSeasonId) loadMatchweeks(selectedSeasonId); }, [selectedSeasonId]);
+  useEffect(() => { if (selectedSeasonId) loadWeeks(selectedSeasonId); }, [selectedSeasonId]);
   useEffect(() => { loadSchedules(selectedMwId); }, [selectedMwId]);
+
+  // The betweek that matches the currently selected matchweek's week number (default sync)
+  function defaultBetWeekId(): string {
+    const mw = matchweeks.find((m) => m.id === parseInt(selectedMwId));
+    const match = mw ? betweeks.find((b) => b.week === mw.week) : undefined;
+    return (match ?? betweeks[0])?.id.toString() ?? "";
+  }
 
   function openCreate() {
     setEditing(null);
@@ -91,6 +122,7 @@ export default function SchedulePage() {
       homeScore: "",
       awayScore: "",
       gameNumber: String(schedules.length + 1),
+      betWeekId: defaultBetWeekId(),
     });
     setOpen(true);
   }
@@ -103,6 +135,7 @@ export default function SchedulePage() {
       homeScore: s.homeScore != null ? String(s.homeScore) : "",
       awayScore: s.awayScore != null ? String(s.awayScore) : "",
       gameNumber: String(s.gameNumber),
+      betWeekId: s.betWeek?.id.toString() ?? defaultBetWeekId(),
     });
     setOpen(true);
   }
@@ -121,6 +154,7 @@ export default function SchedulePage() {
       gameNumber: parseInt(form.gameNumber),
       seasonId: selectedMw.seasonId,
       matchweekId: selectedMw.id,
+      betWeekId: form.betWeekId ? parseInt(form.betWeekId) : undefined,
     };
 
     if (editing) {
@@ -150,11 +184,63 @@ export default function SchedulePage() {
     loadSchedules(selectedMwId);
   }
 
+  async function importSeason() {
+    if (!confirm(
+      "Import the full Premier League schedule for the OPEN season from football-data.org?\n\n" +
+      "This rebuilds that season's matchweeks, betweeks and fixtures (and downloads team crests). " +
+      "Only allowed before any picks have been made."
+    )) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/import/schedule", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error ?? "Import failed."); return; }
+      alert(
+        `Imported ${data.schedules} fixtures across ${data.matchweeks} matchweeks for ${data.season}.\n` +
+        `Teams created: ${data.teamsCreated}. Finished games with scores: ${data.finishedWithScores}.`
+      );
+      await loadBase();
+      if (selectedSeasonId) await loadWeeks(selectedSeasonId);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function syncResults() {
+    const mw = matchweeks.find((m) => m.id === parseInt(selectedMwId));
+    if (!mw) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/import/results", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchday: mw.week }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error ?? "Sync failed."); return; }
+      alert(
+        `Matchday ${data.matchday}: ${data.updated} fixtures updated from ${data.finishedReturned} finished games` +
+        (data.notFound ? ` (${data.notFound} not matched — import the season first).` : ".")
+      );
+      loadSchedules(selectedMwId);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Schedule</h1>
-        <Button onClick={openCreate} disabled={!selectedMwId}>Add Fixture</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={importSeason} disabled={busy}>
+            Import season from API
+          </Button>
+          <Button variant="outline" onClick={syncResults} disabled={busy || !selectedMwId}>
+            Sync results
+          </Button>
+          <Button onClick={openCreate} disabled={!selectedMwId}>Add Fixture</Button>
+        </div>
       </div>
 
       <div className="flex gap-4">
@@ -164,7 +250,9 @@ export default function SchedulePage() {
             <SelectTrigger><SelectValue placeholder="Season" /></SelectTrigger>
             <SelectContent>
               {seasons.map((s) => (
-                <SelectItem key={s.id} value={s.id.toString()}>{s.year}</SelectItem>
+                <SelectItem key={s.id} value={s.id.toString()}>
+                  {s.year}{s.status === "open" ? " (open)" : ""}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -189,6 +277,7 @@ export default function SchedulePage() {
             <TableHead>Home</TableHead>
             <TableHead>Score</TableHead>
             <TableHead>Away</TableHead>
+            <TableHead>Betweek</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -196,13 +285,14 @@ export default function SchedulePage() {
           {schedules.map((s) => (
             <TableRow key={s.id}>
               <TableCell>{s.gameNumber}</TableCell>
-              <TableCell>{s.homeTeam.club}</TableCell>
+              <TableCell><TeamCell team={s.homeTeam} /></TableCell>
               <TableCell>
                 {s.homeScore != null && s.awayScore != null
                   ? `${s.homeScore} – ${s.awayScore}`
                   : "– – –"}
               </TableCell>
-              <TableCell>{s.awayTeam.club}</TableCell>
+              <TableCell><TeamCell team={s.awayTeam} /></TableCell>
+              <TableCell>{s.betWeek ? `BW ${s.betWeek.week}` : "—"}</TableCell>
               <TableCell className="text-right space-x-2">
                 <Button variant="outline" size="sm" onClick={() => openEdit(s)}>Edit</Button>
                 <Button variant="destructive" size="sm" onClick={() => remove(s.id)}>Delete</Button>
@@ -211,7 +301,7 @@ export default function SchedulePage() {
           ))}
           {schedules.length === 0 && (
             <TableRow>
-              <TableCell colSpan={5} className="text-center text-muted-foreground">
+              <TableCell colSpan={6} className="text-center text-muted-foreground">
                 No fixtures for this matchweek.
               </TableCell>
             </TableRow>
@@ -248,6 +338,17 @@ export default function SchedulePage() {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {teams.map((t) => <SelectItem key={t.id} value={t.id.toString()}>{t.club}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Betweek</label>
+              <Select value={form.betWeekId} onValueChange={(v) => setForm({ ...form, betWeekId: v })}>
+                <SelectTrigger><SelectValue placeholder="Select betweek" /></SelectTrigger>
+                <SelectContent>
+                  {betweeks.map((b) => (
+                    <SelectItem key={b.id} value={b.id.toString()}>BW {b.week}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

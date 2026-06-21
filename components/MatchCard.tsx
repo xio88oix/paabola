@@ -3,7 +3,21 @@ import { useState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 
-interface Team { id: number; club: string }
+interface Team { id: number; club: string; logo?: string | null }
+
+function TeamLogo({ team }: { team: Team }) {
+  if (!team.logo) return null;
+  // eslint-disable-next-line @next/next/no-img-element
+  return (
+    <img
+      src={team.logo}
+      alt={team.club}
+      width={24}
+      height={24}
+      className="h-6 w-6 shrink-0 object-contain"
+    />
+  );
+}
 interface Pick { homeScore: number | null; awayScore: number | null; points: number | null }
 
 interface MatchCardProps {
@@ -58,7 +72,10 @@ export function MatchCard({
   return (
     <div className="flex items-center gap-3 py-3 border-b last:border-b-0">
       {/* Home team */}
-      <div className="flex-1 text-right font-medium text-sm">{homeTeam.club}</div>
+      <div className="flex-1 flex items-center justify-end gap-2 font-medium text-sm">
+        <span className="text-right">{homeTeam.club}</span>
+        <TeamLogo team={homeTeam} />
+      </div>
 
       {/* Scores */}
       <div className="flex items-center gap-2">
@@ -107,7 +124,10 @@ export function MatchCard({
       </div>
 
       {/* Away team */}
-      <div className="flex-1 font-medium text-sm">{awayTeam.club}</div>
+      <div className="flex-1 flex items-center gap-2 font-medium text-sm">
+        <TeamLogo team={awayTeam} />
+        <span>{awayTeam.club}</span>
+      </div>
 
       {/* Points badge */}
       {points != null && (

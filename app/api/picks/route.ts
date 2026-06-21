@@ -35,14 +35,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
-  // Verify the matchweek is active
+  // Verify the betweek is active
   if (picks.length > 0) {
     const schedule = await prisma.schedule.findUnique({
       where: { id: picks[0].scheduleId },
-      include: { matchweek: true },
+      include: { betWeek: true },
     });
-    if (!schedule || schedule.matchweek.status !== "active") {
-      return NextResponse.json({ error: "Matchweek is not active" }, { status: 400 });
+    if (!schedule || schedule.betWeek.status !== "active") {
+      return NextResponse.json({ error: "Betweek is not active" }, { status: 400 });
     }
   }
 

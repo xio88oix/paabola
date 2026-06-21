@@ -30,6 +30,11 @@ const PL_TEAMS = [
   "Wolves",
 ];
 
+// Maps a club name to its bundled logo path under /public/logos.
+function logoSlug(club: string): string {
+  return club.toLowerCase().replace(/\s+/g, "-");
+}
+
 // 5 matchweeks × 10 games each — fixed fixtures
 const FIXTURES: Array<[string, string][]> = [
   // Matchweek 1 (completed)
@@ -173,21 +178,33 @@ async function main() {
   await prisma.pick.deleteMany();
   await prisma.schedule.deleteMany();
   await prisma.matchweek.deleteMany();
+  await prisma.betWeek.deleteMany();
   await prisma.season.deleteMany();
   await prisma.user.deleteMany();
   await prisma.team.deleteMany();
+  await prisma.scoringConfig.deleteMany();
+
+  // Create scoring config (10 pts exact score, 4 pts correct result)
+  await prisma.scoringConfig.create({
+    data: { id: 1, exactScorePoints: 10, correctResultPoints: 4 },
+  });
+  console.log("Created scoring config");
 
   // Create teams
   const teams: Record<string, number> = {};
   for (const club of PL_TEAMS) {
-    const team = await prisma.team.create({ data: { club } });
+    const team = await prisma.team.create({
+      data: { club, logo: `/logos/${logoSlug(club)}.svg` },
+    });
     teams[club] = team.id;
   }
   console.log(`Created ${PL_TEAMS.length} teams`);
 
   // Create season
-  const season = await prisma.season.create({ data: { year: 2026 } });
-  console.log("Created season 2026");
+  const season = await prisma.season.create({
+    data: { year: "2026/27", status: "open" },
+  });
+  console.log("Created season 2026/27 (open)");
 
   // Create users
   const hash = await bcrypt.hash("password123", 10);
@@ -213,6 +230,15 @@ async function main() {
       },
     });
 
+    // BetWeeks initially sync 1:1 with Matchweeks
+    const bw = await prisma.betWeek.create({
+      data: {
+        week: mwIdx + 1,
+        status: statuses[mwIdx],
+        seasonId: season.id,
+      },
+    });
+
     const fixtures = FIXTURES[mwIdx];
     const actualScores = ACTUAL_SCORES[mwIdx] ?? null;
 
@@ -224,6 +250,7 @@ async function main() {
         data: {
           seasonId: season.id,
           matchweekId: mw.id,
+          betWeekId: bw.id,
           gameNumber: gameIdx + 1,
           homeTeamId: teams[homeClub],
           awayTeamId: teams[awayClub],

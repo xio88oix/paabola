@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { calculatePoints } from "@/lib/scoring";
-import { getScoringConfig } from "@/lib/scoring-config";
+import { scoreBetWeek } from "@/lib/scoring-config";
 
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
@@ -15,57 +14,46 @@ export async function GET(req: NextRequest) {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { searchParams } = new URL(req.url);
   const seasonId = searchParams.get("seasonId");
-  const matchweeks = await prisma.matchweek.findMany({
+  const betweeks = await prisma.betWeek.findMany({
     where: seasonId ? { seasonId: parseInt(seasonId) } : undefined,
     include: { season: true },
     orderBy: [{ seasonId: "asc" }, { week: "asc" }],
   });
-  return NextResponse.json(matchweeks);
+  return NextResponse.json(betweeks);
 }
 
 export async function POST(req: NextRequest) {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { week, status, seasonId } = await req.json();
-  const mw = await prisma.matchweek.create({ data: { week, status: status ?? "open", seasonId } });
-  return NextResponse.json(mw);
+  const bw = await prisma.betWeek.create({ data: { week, status: status ?? "open", seasonId } });
+  return NextResponse.json(bw);
 }
 
 export async function PUT(req: NextRequest) {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id, week, status, seasonId } = await req.json();
 
-  const mw = await prisma.matchweek.update({ where: { id }, data: { week, status, seasonId } });
+  const bw = await prisma.betWeek.update({ where: { id }, data: { week, status, seasonId } });
 
-  // When marking as completed, calculate points for all picks
+  // When marking as completed, (re)calculate points for all picks in this betweek
   if (status === "completed") {
-    const scoring = await getScoringConfig();
-    const schedules = await prisma.schedule.findMany({
-      where: { matchweekId: id },
-      include: { picks: true },
-    });
-
-    for (const schedule of schedules) {
-      for (const pick of schedule.picks) {
-        const points = calculatePoints(
-          pick.homeScore,
-          pick.awayScore,
-          schedule.homeScore,
-          schedule.awayScore,
-          scoring
-        );
-        await prisma.pick.update({ where: { id: pick.id }, data: { points } });
-      }
-    }
+    await scoreBetWeek(id);
   }
 
-  return NextResponse.json(mw);
+  return NextResponse.json(bw);
 }
 
 export async function DELETE(req: NextRequest) {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await req.json();
-  await prisma.pick.deleteMany({ where: { schedule: { matchweekId: id } } });
-  await prisma.schedule.deleteMany({ where: { matchweekId: id } });
-  await prisma.matchweek.delete({ where: { id } });
+  // Schedules require a betWeek; deleting a betweek with schedules attached is blocked.
+  const scheduleCount = await prisma.schedule.count({ where: { betWeekId: id } });
+  if (scheduleCount > 0) {
+    return NextResponse.json(
+      { error: "Cannot delete a betweek that still has fixtures assigned." },
+      { status: 400 }
+    );
+  }
+  await prisma.betWeek.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

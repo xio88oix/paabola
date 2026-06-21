@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 
-interface Matchweek { id: number; week: number; status: string; season: { year: string } }
+interface BetWeek { id: number; week: number; status: string; season: { year: string } }
 interface Season { id: number; year: string }
 
 const STATUS_COLORS: Record<string, "default" | "secondary" | "outline"> = {
@@ -35,19 +35,19 @@ const STATUS_COLORS: Record<string, "default" | "secondary" | "outline"> = {
   completed: "default",
 };
 
-export default function MatchweeksPage() {
-  const [matchweeks, setMatchweeks] = useState<Matchweek[]>([]);
+export default function BetweeksPage() {
+  const [betweeks, setBetweeks] = useState<BetWeek[]>([]);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<Matchweek | null>(null);
+  const [editing, setEditing] = useState<BetWeek | null>(null);
   const [form, setForm] = useState({ week: "", status: "open", seasonId: "" });
 
   async function load() {
-    const [mwRes, sRes] = await Promise.all([
-      fetch("/api/admin/matchweeks"),
+    const [bwRes, sRes] = await Promise.all([
+      fetch("/api/admin/betweeks"),
       fetch("/api/admin/seasons"),
     ]);
-    setMatchweeks(await mwRes.json());
+    setBetweeks(await bwRes.json());
     setSeasons(await sRes.json());
   }
 
@@ -59,9 +59,9 @@ export default function MatchweeksPage() {
     setOpen(true);
   }
 
-  function openEdit(mw: Matchweek) {
-    setEditing(mw);
-    setForm({ week: String(mw.week), status: mw.status, seasonId: "" });
+  function openEdit(bw: BetWeek) {
+    setEditing(bw);
+    setForm({ week: String(bw.week), status: bw.status, seasonId: "" });
     setOpen(true);
   }
 
@@ -72,13 +72,13 @@ export default function MatchweeksPage() {
       seasonId: parseInt(form.seasonId),
     };
     if (editing) {
-      await fetch("/api/admin/matchweeks", {
+      await fetch("/api/admin/betweeks", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: editing.id, ...payload }),
       });
     } else {
-      await fetch("/api/admin/matchweeks", {
+      await fetch("/api/admin/betweeks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -88,33 +88,37 @@ export default function MatchweeksPage() {
     load();
   }
 
-  async function changeStatus(mw: Matchweek, status: string) {
+  async function changeStatus(bw: BetWeek, status: string) {
     if (status === "completed") {
-      if (!confirm(`Mark Matchweek ${mw.week} as completed? This will calculate all points.`)) return;
+      if (!confirm(`Mark Betweek ${bw.week} as completed? This will calculate all points.`)) return;
     }
-    await fetch("/api/admin/matchweeks", {
+    await fetch("/api/admin/betweeks", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: mw.id, week: mw.week, status, seasonId: undefined }),
+      body: JSON.stringify({ id: bw.id, week: bw.week, status, seasonId: undefined }),
     });
     load();
   }
 
   async function remove(id: number) {
-    if (!confirm("Delete this matchweek and all its schedules?")) return;
-    await fetch("/api/admin/matchweeks", {
+    if (!confirm("Delete this betweek?")) return;
+    const res = await fetch("/api/admin/betweeks", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
+    if (!res.ok) {
+      const data = await res.json();
+      alert(data.error ?? "Could not delete betweek.");
+    }
     load();
   }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Matchweeks</h1>
-        <Button onClick={openCreate}>Add Matchweek</Button>
+        <h1 className="text-2xl font-bold">Betweeks</h1>
+        <Button onClick={openCreate}>Add Betweek</Button>
       </div>
 
       <Table>
@@ -127,29 +131,29 @@ export default function MatchweeksPage() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {matchweeks.map((mw) => (
-            <TableRow key={mw.id}>
-              <TableCell>{mw.season.year}</TableCell>
-              <TableCell>MW {mw.week}</TableCell>
+          {betweeks.map((bw) => (
+            <TableRow key={bw.id}>
+              <TableCell>{bw.season.year}</TableCell>
+              <TableCell>BW {bw.week}</TableCell>
               <TableCell>
-                <Badge variant={STATUS_COLORS[mw.status] ?? "outline"}>
-                  {mw.status}
+                <Badge variant={STATUS_COLORS[bw.status] ?? "outline"}>
+                  {bw.status}
                 </Badge>
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex gap-2 justify-end">
-                  {mw.status === "open" && (
-                    <Button size="sm" variant="outline" onClick={() => changeStatus(mw, "active")}>
+                  {bw.status === "open" && (
+                    <Button size="sm" variant="outline" onClick={() => changeStatus(bw, "active")}>
                       Set Active
                     </Button>
                   )}
-                  {mw.status === "active" && (
-                    <Button size="sm" variant="outline" onClick={() => changeStatus(mw, "completed")}>
+                  {bw.status === "active" && (
+                    <Button size="sm" variant="outline" onClick={() => changeStatus(bw, "completed")}>
                       Complete
                     </Button>
                   )}
-                  <Button variant="outline" size="sm" onClick={() => openEdit(mw)}>Edit</Button>
-                  <Button variant="destructive" size="sm" onClick={() => remove(mw.id)}>Delete</Button>
+                  <Button variant="outline" size="sm" onClick={() => openEdit(bw)}>Edit</Button>
+                  <Button variant="destructive" size="sm" onClick={() => remove(bw.id)}>Delete</Button>
                 </div>
               </TableCell>
             </TableRow>
@@ -160,7 +164,7 @@ export default function MatchweeksPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit Matchweek" : "Add Matchweek"}</DialogTitle>
+            <DialogTitle>{editing ? "Edit Betweek" : "Add Betweek"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
