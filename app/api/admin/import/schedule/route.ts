@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
 
     for (const day of matchdays) {
       const mw = await prisma.matchweek.create({
-        data: { week: day, status: "open", seasonId: season.id },
+        data: { week: day, seasonId: season.id },
       });
       const bw = await prisma.betWeek.create({
         data: { week: day, status: "open", seasonId: season.id },

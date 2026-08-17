@@ -17,16 +17,16 @@ import {
 } from "@/components/ui/table";
 
 interface User { id: number; name: string }
-interface Matchweek { id: number; week: number }
+interface BetWeek { id: number; week: number }
 
 interface Props {
   users: User[];
-  completedMatchweeks: Matchweek[];
+  completedBetWeeks: BetWeek[];
   summaryData: Record<number, Record<number, number>>;
   currentUserId: number;
 }
 
-export function SummaryClient({ users, completedMatchweeks, summaryData, currentUserId }: Props) {
+export function SummaryClient({ users, completedBetWeeks, summaryData, currentUserId }: Props) {
   const [selectedUserId, setSelectedUserId] = useState(currentUserId);
 
   const weeklyPoints = summaryData[selectedUserId] ?? {};
@@ -53,24 +53,24 @@ export function SummaryClient({ users, completedMatchweeks, summaryData, current
         </Select>
       </div>
 
-      {completedMatchweeks.length === 0 ? (
-        <p className="text-muted-foreground">No completed matchweeks yet.</p>
+      {completedBetWeeks.length === 0 ? (
+        <p className="text-muted-foreground">No completed betweeks yet.</p>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Matchweek</TableHead>
+              <TableHead>BetWeek</TableHead>
               <TableHead className="text-right">Points</TableHead>
               <TableHead className="text-right">Running Total</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {completedMatchweeks.map((mw) => {
-              const pts = weeklyPoints[mw.id] ?? 0;
+            {completedBetWeeks.map((bw) => {
+              const pts = weeklyPoints[bw.id] ?? 0;
               runningTotal += pts;
               return (
-                <TableRow key={mw.id}>
-                  <TableCell>Matchweek {mw.week}</TableCell>
+                <TableRow key={bw.id}>
+                  <TableCell>BetWeek {bw.week}</TableCell>
                   <TableCell className="text-right">{pts}</TableCell>
                   <TableCell className="text-right font-semibold">{runningTotal}</TableCell>
                 </TableRow>

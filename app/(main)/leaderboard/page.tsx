@@ -17,7 +17,7 @@ export default async function LeaderboardPage() {
       id: true,
       name: true,
       picks: {
-        where: { points: { not: null }, schedule: { matchweek: { status: "completed" } } },
+        where: { points: { not: null }, schedule: { betWeek: { status: "completed" } } },
         select: { points: true },
       },
     },

@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { calculatePoints } from "@/lib/scoring";
-import { getScoringConfig } from "@/lib/scoring-config";
 
 async function requireAdmin() {
   const session = await getServerSession(authOptions);
@@ -25,39 +23,15 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const { week, status, seasonId } = await req.json();
-  const mw = await prisma.matchweek.create({ data: { week, status: status ?? "open", seasonId } });
+  const { week, seasonId } = await req.json();
+  const mw = await prisma.matchweek.create({ data: { week, seasonId } });
   return NextResponse.json(mw);
 }
 
 export async function PUT(req: NextRequest) {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const { id, week, status, seasonId } = await req.json();
-
-  const mw = await prisma.matchweek.update({ where: { id }, data: { week, status, seasonId } });
-
-  // When marking as completed, calculate points for all picks
-  if (status === "completed") {
-    const scoring = await getScoringConfig();
-    const schedules = await prisma.schedule.findMany({
-      where: { matchweekId: id },
-      include: { picks: true },
-    });
-
-    for (const schedule of schedules) {
-      for (const pick of schedule.picks) {
-        const points = calculatePoints(
-          pick.homeScore,
-          pick.awayScore,
-          schedule.homeScore,
-          schedule.awayScore,
-          scoring
-        );
-        await prisma.pick.update({ where: { id: pick.id }, data: { points } });
-      }
-    }
-  }
-
+  const { id, week, seasonId } = await req.json();
+  const mw = await prisma.matchweek.update({ where: { id }, data: { week, seasonId } });
   return NextResponse.json(mw);
 }
 

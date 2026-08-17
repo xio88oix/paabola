@@ -36,7 +36,6 @@ model Season {
 model Matchweek {
   id        Int        @id @default(autoincrement())
   week      Int
-  status    String     @default("open")
   seasonId  Int
   season    Season     @relation(fields: [seasonId], references: [id], onDelete: Cascade)
   schedules Schedule[]

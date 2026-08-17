@@ -225,7 +225,6 @@ async function main() {
     const mw = await prisma.matchweek.create({
       data: {
         week: mwIdx + 1,
-        status: statuses[mwIdx],
         seasonId: season.id,
       },
     });
@@ -296,7 +295,7 @@ async function main() {
       }
     }
 
-    console.log(`Created matchweek ${mwIdx + 1} (${statuses[mwIdx]})`);
+    console.log(`Created matchweek ${mwIdx + 1} (betweek status: ${statuses[mwIdx]})`);
   }
 
   console.log("Seeding complete!");
