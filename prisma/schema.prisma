@@ -38,7 +38,7 @@ model Matchweek {
   week      Int
   status    String     @default("open")
   seasonId  Int
-  season    Season     @relation(fields: [seasonId], references: [id])
+  season    Season     @relation(fields: [seasonId], references: [id], onDelete: Cascade)
   schedules Schedule[]
 
   @@unique([seasonId, week])
@@ -49,7 +49,7 @@ model BetWeek {
   week      Int
   status    String     @default("open")
   seasonId  Int
-  season    Season     @relation(fields: [seasonId], references: [id])
+  season    Season     @relation(fields: [seasonId], references: [id], onDelete: Cascade)
   schedules Schedule[]
 
   @@unique([seasonId, week])
@@ -66,9 +66,9 @@ model Schedule {
   awayTeamId  Int
   homeScore   Int?
   awayScore   Int?
-  season      Season    @relation(fields: [seasonId], references: [id])
-  matchweek   Matchweek @relation(fields: [matchweekId], references: [id])
-  betWeek     BetWeek   @relation(fields: [betWeekId], references: [id])
+  season      Season    @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  matchweek   Matchweek @relation(fields: [matchweekId], references: [id], onDelete: Cascade)
+  betWeek     BetWeek   @relation(fields: [betWeekId], references: [id], onDelete: Cascade)
   homeTeam    Team      @relation("HomeTeam", fields: [homeTeamId], references: [id])
   awayTeam    Team      @relation("AwayTeam", fields: [awayTeamId], references: [id])
   picks       Pick[]
@@ -90,7 +90,7 @@ model Pick {
   awayScore  Int?
   points     Int?
   user       User     @relation(fields: [userId], references: [id])
-  schedule   Schedule @relation(fields: [scheduleId], references: [id])
+  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
 
   @@unique([userId, scheduleId])
 }

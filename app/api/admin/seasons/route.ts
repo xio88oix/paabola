@@ -34,7 +34,28 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const { id } = await req.json();
+  const { id, confirm } = await req.json();
+
+  const season = await prisma.season.findUnique({ where: { id } });
+  if (!season) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Count everything that hangs off this season so the caller knows the blast radius.
+  const [matchweeks, betweeks, schedules, picks] = await Promise.all([
+    prisma.matchweek.count({ where: { seasonId: id } }),
+    prisma.betWeek.count({ where: { seasonId: id } }),
+    prisma.schedule.count({ where: { seasonId: id } }),
+    prisma.pick.count({ where: { schedule: { seasonId: id } } }),
+  ]);
+  const counts = { matchweeks, betweeks, schedules, picks };
+
+  // No explicit confirmation → report the blast radius, delete nothing.
+  if (confirm !== true) {
+    return NextResponse.json({ requiresConfirmation: true, year: season.year, counts });
+  }
+
+  // Schedule/Matchweek/BetWeek → Season and Pick → Schedule are ON DELETE CASCADE,
+  // so deleting the season removes the whole subtree in one statement.
   await prisma.season.delete({ where: { id } });
-  return NextResponse.json({ ok: true });
+
+  return NextResponse.json({ ok: true, deleted: counts });
 }

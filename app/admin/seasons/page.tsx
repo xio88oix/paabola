@@ -27,12 +27,16 @@ import {
 import { Badge } from "@/components/ui/badge";
 
 interface Season { id: number; year: string; status: string }
+interface DeleteImpact { year: string; counts: { matchweeks: number; betweeks: number; schedules: number; picks: number } }
 
 export default function SeasonsPage() {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Season | null>(null);
   const [form, setForm] = useState({ year: "", status: "open" });
+  const [deleteTarget, setDeleteTarget] = useState<Season | null>(null);
+  const [deleteImpact, setDeleteImpact] = useState<DeleteImpact | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     const res = await fetch("/api/admin/seasons");
@@ -71,13 +75,31 @@ export default function SeasonsPage() {
     load();
   }
 
-  async function remove(id: number) {
-    if (!confirm("Delete this season?")) return;
+  // Step 1: ask the server what deleting this season would wipe, then show the confirm dialog.
+  async function askRemove(s: Season) {
+    const res = await fetch("/api/admin/seasons", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: s.id }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    setDeleteTarget(s);
+    setDeleteImpact({ year: data.year ?? s.year, counts: data.counts });
+  }
+
+  // Step 2: user confirmed — actually cascade delete.
+  async function confirmRemove() {
+    if (!deleteTarget) return;
+    setDeleting(true);
     await fetch("/api/admin/seasons", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
+      body: JSON.stringify({ id: deleteTarget.id, confirm: true }),
     });
+    setDeleting(false);
+    setDeleteTarget(null);
+    setDeleteImpact(null);
     load();
   }
 
@@ -105,7 +127,7 @@ export default function SeasonsPage() {
               </TableCell>
               <TableCell className="text-right space-x-2">
                 <Button variant="outline" size="sm" onClick={() => openEdit(s)}>Edit</Button>
-                <Button variant="destructive" size="sm" onClick={() => remove(s.id)}>Delete</Button>
+                <Button variant="destructive" size="sm" onClick={() => askRemove(s)}>Delete</Button>
               </TableCell>
             </TableRow>
           ))}
@@ -140,6 +162,38 @@ export default function SeasonsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
             <Button onClick={save}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => { if (!o) { setDeleteTarget(null); setDeleteImpact(null); } }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete season {deleteImpact?.year}?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <p>This permanently deletes the season and everything under it:</p>
+            <ul className="list-disc pl-5 space-y-1">
+              <li>{deleteImpact?.counts.matchweeks ?? 0} matchweeks</li>
+              <li>{deleteImpact?.counts.betweeks ?? 0} betweeks</li>
+              <li>{deleteImpact?.counts.schedules ?? 0} fixtures</li>
+              <li>{deleteImpact?.counts.picks ?? 0} player picks</li>
+            </ul>
+            <p className="font-medium text-destructive">This cannot be undone.</p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setDeleteTarget(null); setDeleteImpact(null); }}
+            >
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmRemove} disabled={deleting}>
+              {deleting ? "Deleting…" : "Delete everything"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
