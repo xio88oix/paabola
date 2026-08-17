@@ -1,7 +1,9 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { Dices, Eraser } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { rollScoreline } from "@/lib/random-scores";
 
 interface Team { id: number; club: string; logo?: string | null }
 
@@ -28,7 +30,10 @@ interface MatchCardProps {
   actualAway: number | null;
   initialPick?: Pick | null;
   isEditable: boolean;
-  onPickChange?: (scheduleId: number, homeScore: number, awayScore: number) => void;
+  // Editable mode only: score inputs are fully controlled by the parent.
+  homeScore?: string;
+  awayScore?: string;
+  onScoreChange?: (scheduleId: number, homeScore: string, awayScore: string) => void;
 }
 
 export function MatchCard({
@@ -39,34 +44,10 @@ export function MatchCard({
   actualAway,
   initialPick,
   isEditable,
-  onPickChange,
+  homeScore = "",
+  awayScore = "",
+  onScoreChange,
 }: MatchCardProps) {
-  const [homeScore, setHomeScore] = useState(
-    initialPick?.homeScore != null ? String(initialPick.homeScore) : ""
-  );
-  const [awayScore, setAwayScore] = useState(
-    initialPick?.awayScore != null ? String(initialPick.awayScore) : ""
-  );
-
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (!isEditable || !onPickChange) return;
-    if (homeScore === "" || awayScore === "") return;
-    const h = parseInt(homeScore);
-    const a = parseInt(awayScore);
-    if (isNaN(h) || isNaN(a)) return;
-
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      onPickChange(scheduleId, h, a);
-    }, 800);
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [homeScore, awayScore, isEditable, scheduleId, onPickChange]);
-
   const points = initialPick?.points;
 
   return (
@@ -86,7 +67,7 @@ export function MatchCard({
               min={0}
               max={20}
               value={homeScore}
-              onChange={(e) => setHomeScore(e.target.value)}
+              onChange={(e) => onScoreChange?.(scheduleId, e.target.value, awayScore)}
               className="w-14 text-center"
               placeholder="–"
             />
@@ -96,7 +77,7 @@ export function MatchCard({
               min={0}
               max={20}
               value={awayScore}
-              onChange={(e) => setAwayScore(e.target.value)}
+              onChange={(e) => onScoreChange?.(scheduleId, homeScore, e.target.value)}
               className="w-14 text-center"
               placeholder="–"
             />
@@ -128,6 +109,37 @@ export function MatchCard({
         <TeamLogo team={awayTeam} />
         <span>{awayTeam.club}</span>
       </div>
+
+      {/* Per-game actions (edit mode): roll a random score / clear this game */}
+      {isEditable && (
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            title="Roll a random score for this game"
+            aria-label="Roll a random score for this game"
+            onClick={() => {
+              const { home, away } = rollScoreline();
+              onScoreChange?.(scheduleId, String(home), String(away));
+            }}
+          >
+            <Dices className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            title="Clear this game"
+            aria-label="Clear this game"
+            onClick={() => onScoreChange?.(scheduleId, "", "")}
+          >
+            <Eraser className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
 
       {/* Points badge */}
       {points != null && (
