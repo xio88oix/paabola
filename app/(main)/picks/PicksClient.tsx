@@ -39,6 +39,13 @@ function stateFromSchedules(schedules: Schedule[]): PickState {
   return state;
 }
 
+// Deep copy so reverting can't share references with live state.
+function clone(state: PickState): PickState {
+  const next: PickState = {};
+  for (const id of Object.keys(state)) next[Number(id)] = { ...state[Number(id)] };
+  return next;
+}
+
 // Canonical form for change detection (order-independent).
 function serialize(state: PickState): string {
   return Object.keys(state)
@@ -59,11 +66,12 @@ function toSavedPick(scheduleId: number, entry: Entry): { scheduleId: number; ho
 
 export function PicksClient({ activeBetWeek, activeSchedules }: Props) {
   const [picks, setPicks] = useState<PickState>(() => stateFromSchedules(activeSchedules));
-  // Snapshot of the last-saved on-screen state, for unsaved-changes detection.
-  const [savedSnapshot, setSavedSnapshot] = useState<string>(() => serialize(stateFromSchedules(activeSchedules)));
+  // Last-saved on-screen state, used to detect and revert unsaved changes.
+  const [savedState, setSavedState] = useState<PickState>(() => stateFromSchedules(activeSchedules));
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
+  const savedSnapshot = useMemo(() => serialize(savedState), [savedState]);
   const dirty = useMemo(() => serialize(picks) !== savedSnapshot, [picks, savedSnapshot]);
 
   const setScore = useCallback((scheduleId: number, home: string, away: string) => {
@@ -77,6 +85,11 @@ export function PicksClient({ activeBetWeek, activeSchedules }: Props) {
       return next;
     });
   }, []);
+
+  // Discard unsaved edits: revert to the last-saved state.
+  const cancel = useCallback(() => {
+    setPicks(clone(savedState));
+  }, [savedState]);
 
   const rollTheDice = useCallback(() => {
     setPicks((prev) => {
@@ -104,7 +117,7 @@ export function PicksClient({ activeBetWeek, activeSchedules }: Props) {
       });
       if (!res.ok) return;
 
-      setSavedSnapshot(serialize(picks));
+      setSavedState(clone(picks));
       setSavedAt(new Date().toLocaleTimeString());
     } finally {
       setSaving(false);
@@ -128,6 +141,9 @@ export function PicksClient({ activeBetWeek, activeSchedules }: Props) {
               </Button>
               <Button variant="outline" size="sm" onClick={reset} disabled={saving}>
                 Reset
+              </Button>
+              <Button variant="outline" size="sm" onClick={cancel} disabled={saving || !dirty}>
+                Cancel
               </Button>
               <Button size="sm" onClick={save} disabled={saving || !dirty}>
                 Save
