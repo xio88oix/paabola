@@ -9,34 +9,19 @@ export default async function PicksPage() {
 
   const userId = parseInt(session.user.id);
 
-  // Get all matchweeks for season 2026
-  const matchweeks = await prisma.matchweek.findMany({
-    where: { season: { year: 2026 } },
-    orderBy: { week: "asc" },
-  });
+  // The app operates on the currently open season
+  const season = await prisma.season.findFirst({ where: { status: "open" } });
 
-  const activeMatchweek = matchweeks.find((mw) => mw.status === "active") ?? null;
-  const completedMatchweeks = matchweeks.filter((mw) => mw.status === "completed");
-
-  // Load active matchweek schedules + picks
-  const activeSchedules = activeMatchweek
-    ? await prisma.schedule.findMany({
-        where: { matchweekId: activeMatchweek.id },
-        include: {
-          homeTeam: true,
-          awayTeam: true,
-          picks: { where: { userId } },
-        },
-        orderBy: { gameNumber: "asc" },
+  // The active BetWeek is the one users currently pick from
+  const activeBetWeek = season
+    ? await prisma.betWeek.findFirst({
+        where: { seasonId: season.id, status: "active" },
       })
-    : [];
+    : null;
 
-  // Load completed matchweek schedules + picks (for the first completed week by default)
-  const defaultCompleted = completedMatchweeks[completedMatchweeks.length - 1] ?? null;
-
-  const completedSchedules = defaultCompleted
+  const activeSchedules = activeBetWeek
     ? await prisma.schedule.findMany({
-        where: { matchweekId: defaultCompleted.id },
+        where: { betWeekId: activeBetWeek.id },
         include: {
           homeTeam: true,
           awayTeam: true,
@@ -48,13 +33,8 @@ export default async function PicksPage() {
 
   return (
     <PicksClient
-      userId={userId}
-      matchweeks={matchweeks}
-      activeMatchweek={activeMatchweek}
+      activeBetWeek={activeBetWeek}
       activeSchedules={activeSchedules}
-      completedMatchweeks={completedMatchweeks}
-      defaultCompletedId={defaultCompleted?.id ?? null}
-      initialCompletedSchedules={completedSchedules}
     />
   );
 }

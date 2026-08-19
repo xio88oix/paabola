@@ -7,7 +7,9 @@ const adminLinks = [
   { href: "/admin/seasons", label: "Seasons" },
   { href: "/admin/teams", label: "Teams" },
   { href: "/admin/matchweeks", label: "Matchweeks" },
+  { href: "/admin/betweeks", label: "Betweeks" },
   { href: "/admin/schedule", label: "Schedule" },
+  { href: "/admin/scoring", label: "Scoring" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

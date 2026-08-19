@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
 
   const schedules = await prisma.schedule.findMany({
     where: matchweekId ? { matchweekId: parseInt(matchweekId) } : undefined,
-    include: { homeTeam: true, awayTeam: true, matchweek: true },
+    include: { homeTeam: true, awayTeam: true, matchweek: true, betWeek: true },
     orderBy: { gameNumber: "asc" },
   });
   return NextResponse.json(schedules);
@@ -29,13 +29,14 @@ export async function POST(req: NextRequest) {
     data: {
       seasonId: body.seasonId,
       matchweekId: body.matchweekId,
+      betWeekId: body.betWeekId,
       gameNumber: body.gameNumber,
       homeTeamId: body.homeTeamId,
       awayTeamId: body.awayTeamId,
       homeScore: body.homeScore ?? null,
       awayScore: body.awayScore ?? null,
     },
-    include: { homeTeam: true, awayTeam: true },
+    include: { homeTeam: true, awayTeam: true, betWeek: true },
   });
   return NextResponse.json(schedule);
 }
@@ -51,8 +52,9 @@ export async function PUT(req: NextRequest) {
       homeScore: body.homeScore ?? null,
       awayScore: body.awayScore ?? null,
       gameNumber: body.gameNumber,
+      ...(body.betWeekId != null ? { betWeekId: body.betWeekId } : {}),
     },
-    include: { homeTeam: true, awayTeam: true },
+    include: { homeTeam: true, awayTeam: true, betWeek: true },
   });
   return NextResponse.json(schedule);
 }

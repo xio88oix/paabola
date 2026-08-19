@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/db";
+import { getSeasonStandings } from "@/lib/results";
 import {
   Table,
   TableBody,
@@ -8,25 +8,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-export default async function LeaderboardPage() {
-  const users = await prisma.user.findMany({
-    select: {
-      id: true,
-      name: true,
-      picks: {
-        where: { points: { not: null }, schedule: { matchweek: { status: "completed" } } },
-        select: { points: true },
-      },
-    },
-  });
+// Reads live data from the database; never prerender at build time.
+export const dynamic = "force-dynamic";
 
-  const ranked = users
-    .map((u) => ({
-      id: u.id,
-      name: u.name,
-      total: u.picks.reduce((sum, p) => sum + (p.points ?? 0), 0),
-    }))
-    .sort((a, b) => b.total - a.total);
+export default async function LeaderboardPage() {
+  const ranked = await getSeasonStandings();
 
   return (
     <div className="space-y-6">
@@ -41,7 +27,7 @@ export default async function LeaderboardPage() {
         </TableHeader>
         <TableBody>
           {ranked.map((user, i) => (
-            <TableRow key={user.id} className={i === 0 ? "font-bold" : ""}>
+            <TableRow key={user.userId} className={i === 0 ? "font-bold" : ""}>
               <TableCell>{i + 1}</TableCell>
               <TableCell>{user.name}</TableCell>
               <TableCell className="text-right">{user.total}</TableCell>

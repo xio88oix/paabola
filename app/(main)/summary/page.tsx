@@ -12,33 +12,37 @@ export default async function SummaryPage() {
     orderBy: { name: "asc" },
   });
 
-  const completedMatchweeks = await prisma.matchweek.findMany({
-    where: { status: "completed", season: { year: 2026 } },
-    orderBy: { week: "asc" },
-  });
+  const season = await prisma.season.findFirst({ where: { status: "open" } });
 
-  // Build summary: for each user, for each completed matchweek, sum points
+  const completedBetWeeks = season
+    ? await prisma.betWeek.findMany({
+        where: { status: "completed", seasonId: season.id },
+        orderBy: { week: "asc" },
+      })
+    : [];
+
+  // Build summary: for each user, for each completed betweek, sum points
   const summaryData: Record<number, Record<number, number>> = {};
 
   for (const user of users) {
     summaryData[user.id] = {};
-    for (const mw of completedMatchweeks) {
+    for (const bw of completedBetWeeks) {
       const picks = await prisma.pick.findMany({
         where: {
           userId: user.id,
-          schedule: { matchweekId: mw.id },
+          schedule: { betWeekId: bw.id },
           points: { not: null },
         },
         select: { points: true },
       });
-      summaryData[user.id][mw.id] = picks.reduce((sum, p) => sum + (p.points ?? 0), 0);
+      summaryData[user.id][bw.id] = picks.reduce((sum, p) => sum + (p.points ?? 0), 0);
     }
   }
 
   return (
     <SummaryClient
       users={users}
-      completedMatchweeks={completedMatchweeks}
+      completedBetWeeks={completedBetWeeks}
       summaryData={summaryData}
       currentUserId={parseInt(session.user.id)}
     />

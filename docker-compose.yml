@@ -1,0 +1,15 @@
+services:
+  paabola:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      # SQLite database persists on the host (NAS) across rebuilds/restarts
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/data/paabola.db
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      - FOOTBALL_DATA_TOKEN=${FOOTBALL_DATA_TOKEN}
+    restart: unless-stopped
