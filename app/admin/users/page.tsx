@@ -19,12 +19,13 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 
-interface User { id: number; name: string; isAdmin: boolean }
+interface User { id: number; name: string; isAdmin: boolean; trmnlToken?: string | null }
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
+  const [tokenUser, setTokenUser] = useState<User | null>(null);
   const [form, setForm] = useState({ name: "", password: "", isAdmin: false });
 
   async function load() {
@@ -74,6 +75,22 @@ export default function UsersPage() {
     load();
   }
 
+  function trmnlUrl(token: string | null | undefined): string {
+    if (!token) return "";
+    return `${window.location.origin}/api/trmnl/results?token=${token}`;
+  }
+
+  async function regenerateToken(u: User) {
+    const res = await fetch("/api/admin/users/trmnl-token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: u.id }),
+    });
+    const data = await res.json();
+    setTokenUser({ ...u, trmnlToken: data.trmnlToken });
+    load();
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -99,6 +116,7 @@ export default function UsersPage() {
                 </Badge>
               </TableCell>
               <TableCell className="text-right space-x-2">
+                <Button variant="outline" size="sm" onClick={() => setTokenUser(u)}>TRMNL</Button>
                 <Button variant="outline" size="sm" onClick={() => openEdit(u)}>Edit</Button>
                 <Button variant="destructive" size="sm" onClick={() => remove(u.id)}>Delete</Button>
               </TableCell>
@@ -139,6 +157,38 @@ export default function UsersPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
             <Button onClick={save}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!tokenUser} onOpenChange={(o) => !o && setTokenUser(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>TRMNL device URL — {tokenUser?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {tokenUser?.trmnlToken ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Paste this as the Polling URL in the TRMNL private plugin:
+                </p>
+                <Input
+                  readOnly
+                  value={trmnlUrl(tokenUser.trmnlToken)}
+                  onFocus={(e) => e.target.select()}
+                />
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No token yet. Generate one to get a polling URL.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTokenUser(null)}>Close</Button>
+            <Button onClick={() => tokenUser && regenerateToken(tokenUser)}>
+              {tokenUser?.trmnlToken ? "Regenerate" : "Generate"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
