@@ -35,8 +35,12 @@ season-cumulative standings on a TRMNL device. One private plugin per person.
 - `standings[]`: `{ name, total, you }` (season-cumulative, `you` marks the
   device owner)
 
-When no BetWeek is completed yet, `week` is `null` and `fixtures` is empty
-(the template shows "No results yet").
+The endpoint picks the most-recently-**completed** BetWeek; if none is
+completed yet it falls back to the latest available BetWeek, so before a week
+finishes the device shows that week's fixtures with `actual` as `–` (same as
+the in-app results page). `week` is `null` and `fixtures` is empty only when
+the open season has no BetWeeks at all (or there is no open season) — then the
+template shows "No results yet".
 
 ## Keeping the template in sync
 
