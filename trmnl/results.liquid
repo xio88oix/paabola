@@ -1,0 +1,57 @@
+<div class="view view--full">
+  <div class="layout">
+    <div class="columns">
+      <div class="column">
+
+        <div class="title_bar">
+          <span class="title">{{ player }} · {{ season }}</span>
+          {% if week %}<span class="instance">Week {{ week }}</span>{% endif %}
+        </div>
+
+        {% if week %}
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Match</th>
+                <th>Result</th>
+                <th>Pick</th>
+                <th>Pts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for f in fixtures %}
+              <tr>
+                <td>{{ f.home }} v {{ f.away }}</td>
+                <td>{{ f.actual }}</td>
+                <td>{{ f.pick }}{% if f.outcome == "exact" %} ★{% elsif f.outcome == "result" %} ●{% endif %}</td>
+                <td>{{ f.points }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          <p class="value value--small">
+            Week points: {{ week_points }}{% if week_rank %} · Rank {{ week_rank }}{% endif %}
+          </p>
+        {% else %}
+          <div class="content"><span class="value">No results yet</span></div>
+        {% endif %}
+
+        <div class="title_bar">
+          <span class="title">Season standings</span>
+        </div>
+        <table class="table">
+          <tbody>
+            {% for s in standings %}
+            <tr>
+              <td>{{ forloop.index }}</td>
+              <td>{{ s.name }}{% if s.you %} (you){% endif %}</td>
+              <td>{{ s.total }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+      </div>
+    </div>
+  </div>
+</div>
