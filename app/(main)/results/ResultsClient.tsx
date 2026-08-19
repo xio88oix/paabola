@@ -123,6 +123,13 @@ export function ResultsClient({
         <p className="text-muted-foreground">No fixtures for this betweek.</p>
       ) : (
         <div className="border rounded-lg px-4">
+          {/* Column header — aligned to MatchCard's flex-1 / w-32 / flex-1 / w-10 columns */}
+          <div className="flex items-center gap-3 py-2 border-b text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="flex-1 text-right">Home</div>
+            <div className="w-32 text-center">Pick / Result</div>
+            <div className="flex-1 text-left">Away</div>
+            <div className="w-10 text-center">Pts</div>
+          </div>
           {results.schedules.map((s) => (
             <MatchCard
               key={s.id}
