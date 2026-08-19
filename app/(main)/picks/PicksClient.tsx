@@ -73,6 +73,22 @@ export function PicksClient({ activeBetWeek, activeSchedules }: Props) {
 
   const savedSnapshot = useMemo(() => serialize(savedState), [savedState]);
   const dirty = useMemo(() => serialize(picks) !== savedSnapshot, [picks, savedSnapshot]);
+  // Per-game "changed since last save", so each row can flag itself.
+  const dirtyIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const id of Object.keys(picks)) {
+      const scheduleId = Number(id);
+      const now = picks[scheduleId];
+      const before = savedState[scheduleId];
+      if (now.home !== (before?.home ?? "") || now.away !== (before?.away ?? "")) ids.add(scheduleId);
+    }
+    return ids;
+  }, [picks, savedState]);
+  // Any game still without a complete pick — the toolbar dice has nothing to do otherwise.
+  const hasUnpicked = useMemo(
+    () => Object.entries(picks).some(([id, entry]) => !toSavedPick(Number(id), entry)),
+    [picks],
+  );
 
   const setScore = useCallback((scheduleId: number, home: string, away: string) => {
     setPicks((prev) => ({ ...prev, [scheduleId]: { home, away } }));
@@ -91,12 +107,19 @@ export function PicksClient({ activeBetWeek, activeSchedules }: Props) {
     setPicks(clone(savedState));
   }, [savedState]);
 
+  // Toolbar dice: only fill in the games that don't have a pick yet.
   const rollTheDice = useCallback(() => {
     setPicks((prev) => {
       const next: PickState = {};
       for (const id of Object.keys(prev)) {
+        const scheduleId = Number(id);
+        const entry = prev[scheduleId];
+        if (toSavedPick(scheduleId, entry)) {
+          next[scheduleId] = { ...entry };
+          continue;
+        }
         const { home, away } = rollScoreline();
-        next[Number(id)] = { home: String(home), away: String(away) };
+        next[scheduleId] = { home: String(home), away: String(away) };
       }
       return next;
     });
@@ -132,11 +155,15 @@ export function PicksClient({ activeBetWeek, activeSchedules }: Props) {
             <h2 className="text-xl font-semibold">Betweek {activeBetWeek.week} — Active</h2>
             <div className="flex items-center gap-2">
               {saving && <span className="text-sm text-muted-foreground">Saving…</span>}
-              {!saving && dirty && <span className="text-sm text-muted-foreground">Unsaved changes</span>}
+              {!saving && dirty && (
+                <span className="text-sm text-amber-600 dark:text-amber-500">
+                  {dirtyIds.size} unsaved {dirtyIds.size === 1 ? "change" : "changes"}
+                </span>
+              )}
               {!saving && !dirty && savedAt && (
                 <span className="text-sm text-muted-foreground">Saved at {savedAt}</span>
               )}
-              <Button variant="outline" size="sm" onClick={rollTheDice} disabled={saving}>
+              <Button variant="outline" size="sm" onClick={rollTheDice} disabled={saving || !hasUnpicked}>
                 Roll the dice
               </Button>
               <Button variant="outline" size="sm" onClick={reset} disabled={saving}>
@@ -163,6 +190,7 @@ export function PicksClient({ activeBetWeek, activeSchedules }: Props) {
                 isEditable={true}
                 homeScore={picks[s.id]?.home ?? ""}
                 awayScore={picks[s.id]?.away ?? ""}
+                isDirty={dirtyIds.has(s.id)}
                 onScoreChange={setScore}
               />
             ))}

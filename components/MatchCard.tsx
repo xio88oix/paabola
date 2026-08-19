@@ -33,6 +33,8 @@ interface MatchCardProps {
   // Editable mode only: score inputs are fully controlled by the parent.
   homeScore?: string;
   awayScore?: string;
+  // Editable mode only: this game differs from what was last saved.
+  isDirty?: boolean;
   onScoreChange?: (scheduleId: number, homeScore: string, awayScore: string) => void;
 }
 
@@ -46,12 +48,22 @@ export function MatchCard({
   isEditable,
   homeScore = "",
   awayScore = "",
+  isDirty = false,
   onScoreChange,
 }: MatchCardProps) {
   const points = initialPick?.points;
+  const unsaved = isEditable && isDirty;
 
   return (
-    <div className="flex items-center gap-3 py-3 border-b last:border-b-0">
+    <div
+      className={
+        "relative flex items-center gap-3 py-3 border-b last:border-b-0" +
+        (unsaved
+          ? " before:absolute before:inset-y-0 before:-left-3 before:w-1 before:rounded-full before:bg-amber-500"
+          : "")
+      }
+      title={unsaved ? "Unsaved changes" : undefined}
+    >
       {/* Home team */}
       <div className="flex-1 flex items-center justify-end gap-2 font-medium text-sm">
         <span className="text-right">{homeTeam.club}</span>
@@ -68,7 +80,7 @@ export function MatchCard({
               max={20}
               value={homeScore}
               onChange={(e) => onScoreChange?.(scheduleId, e.target.value, awayScore)}
-              className="w-14 text-center"
+              className={"w-14 text-center" + (unsaved ? " border-amber-500" : "")}
               placeholder="–"
             />
             <span className="text-muted-foreground">–</span>
@@ -78,7 +90,7 @@ export function MatchCard({
               max={20}
               value={awayScore}
               onChange={(e) => onScoreChange?.(scheduleId, homeScore, e.target.value)}
-              className="w-14 text-center"
+              className={"w-14 text-center" + (unsaved ? " border-amber-500" : "")}
               placeholder="–"
             />
           </>
