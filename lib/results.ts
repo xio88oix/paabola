@@ -73,3 +73,43 @@ export async function getBetWeekResults(
 
   return { schedules: rows, standings };
 }
+
+export interface SeasonStanding {
+  userId: number;
+  name: string;
+  total: number;
+}
+
+/**
+ * Season-cumulative standings: total points per player across all COMPLETED
+ * betweeks. Pass a seasonId to scope to a single season; omit for all seasons
+ * (matches the historical leaderboard behavior). Sorted by total desc, name asc.
+ */
+export async function getSeasonStandings(seasonId?: number): Promise<SeasonStanding[]> {
+  const users = await prisma.user.findMany({
+    select: {
+      id: true,
+      name: true,
+      picks: {
+        where: {
+          points: { not: null },
+          schedule: {
+            betWeek: {
+              status: "completed",
+              ...(seasonId ? { seasonId } : {}),
+            },
+          },
+        },
+        select: { points: true },
+      },
+    },
+  });
+
+  return users
+    .map((u) => ({
+      userId: u.id,
+      name: u.name,
+      total: u.picks.reduce((sum, p) => sum + (p.points ?? 0), 0),
+    }))
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+}
