@@ -26,15 +26,15 @@ Everything below is free: Cloudflare Tunnel is free, Access is free to 50 users.
 
 These were verified/fixed locally before you start:
 
-| Item | Status |
-|---|---|
-| All work merged to `main`, pushed to `origin` | ✅ clean, no unmerged branches |
-| `Dockerfile` (node:22-alpine, better-sqlite3 build deps, migrate → seed → start) | ✅ correct |
-| `docker-compose.yml` host port | ⚠️ **changed 3000 → 3001** (see Part 1) |
-| `./data:/app/data` volume, `DATABASE_URL=file:/app/data/paabola.db` | ✅ correct |
-| `next.config.ts` `serverExternalPackages: ["better-sqlite3"]` | ✅ correct |
-| `force-dynamic` on DB-querying pages (`/admin`, `/leaderboard`, TRMNL route) | ✅ correct |
-| `.gitignore` now excludes `*.txt` (your notes files hold live secrets) | ✅ added |
+| Item                                                                             | Status                                  |
+| -------------------------------------------------------------------------------- | --------------------------------------- |
+| All work merged to `main`, pushed to `origin`                                    | ✅ clean, no unmerged branches          |
+| `Dockerfile` (node:22-alpine, better-sqlite3 build deps, migrate → seed → start) | ✅ correct                              |
+| `docker-compose.yml` host port                                                   | ⚠️ **changed 3000 → 3001** (see Part 1) |
+| `./data:/app/data` volume, `DATABASE_URL=file:/app/data/paabola.db`              | ✅ correct                              |
+| `next.config.ts` `serverExternalPackages: ["better-sqlite3"]`                    | ✅ correct                              |
+| `force-dynamic` on DB-querying pages (`/admin`, `/leaderboard`, TRMNL route)     | ✅ correct                              |
+| `.gitignore` now excludes `*.txt` (your notes files hold live secrets)           | ✅ added                                |
 
 ---
 
@@ -76,7 +76,7 @@ Create the `.env` file. Paabola needs **three** values (f1picks only needed one)
 cat > .env << 'EOF'
 NEXTAUTH_SECRET=PASTE_GENERATED_SECRET_HERE
 NEXTAUTH_URL=https://epl.eusoof.com
-FOOTBALL_DATA_TOKEN=PASTE_YOUR_FOOTBALL_DATA_TOKEN_HERE
+FOOTBALL_DATA_TOKEN=6ba7a6f43c3d4dd4895776edfe138cc4
 EOF
 ```
 
@@ -92,14 +92,6 @@ cat .env   # confirm it looks right
 - **`FOOTBALL_DATA_TOKEN`** — free key from
   https://www.football-data.org/client/register. Needed only for Admin →
   Schedule "Import season" / "Sync results". Leave blank to set up later.
-
-Create the data directory **before** the first start. Docker 20.10 on DSM 7.1
-does not auto-create bind-mount source directories, and the container refuses to
-start without it:
-
-```bash
-mkdir -p data
-```
 
 Build and start (DSM 7.1 uses the hyphenated `docker-compose`):
 
@@ -145,10 +137,42 @@ ps aux | grep cloudflared
 sudo systemctl status cloudflared 2>/dev/null
 ```
 
-- If it was started with `--token ...` (the service install), it may be using
-  **dashboard-managed** ingress rather than a local file — in that case skip to
-  **3c**.
-- If it was started with `--config /path/config.yml`, edit **that** file.
+**Findings on this NAS (checked 2026-09-10):**
+
+- The systemd service (root) runs with `--token`, which puts that replica in
+  **remotely-managed** mode: it pulls ingress from the Cloudflare edge and
+  **ignores the `ingress:` block** in the local `config.yml` it was pointed at.
+  So the stale `parabola.eusoof.com` entry there was never in effect.
+  → Use **3c** (dashboard), not 3b.
+- A **second, stray cloudflared** was also running as user `mseusoof` from
+  `/volume1/docker/cloudflared/.cloudflared/config.yml` — a leftover from the
+  manual `nohup` runs. See 3a-bis.
+
+Confirm the management mode:
+
+```bash
+sudo cloudflared tunnel info nas-tunnel
+```
+
+Then check Zero Trust → Networks → Tunnels → nas-tunnel. A populated
+**Public Hostnames** tab means remotely-managed, and the dashboard wins.
+
+### 3a-bis. Kill any duplicate cloudflared process
+
+Two processes connected to the same tunnel ID register as **two replicas**, and
+Cloudflare load-balances requests across them. Everything looks fine while both
+configs happen to agree — but add a hostname to only one and roughly half your
+requests hit the replica that doesn't know it and return **404**. Intermittent
+and painful to diagnose.
+
+```bash
+ps aux | grep cloudflared
+sudo kill <PID-of-the-non-systemd-one>
+ps aux | grep cloudflared   # only the root/systemd process should remain
+```
+
+Keep the **systemd** one — it's `enabled`, so it survives a reboot. The manually
+launched one does not.
 
 ### 3b. Edit the config (file-managed tunnel)
 
@@ -170,7 +194,7 @@ EOF
 
 Order matters: the catch-all `http_status:404` must stay last.
 
-### 3c. Or edit in the dashboard (token-managed tunnel)
+### 3c. Add the hostname in the dashboard (token-managed tunnel) — use this one
 
 Cloudflare dashboard → **Zero Trust → Networks → Tunnels → nas-tunnel →
 Configure → Public Hostnames → Add a public hostname**:
@@ -179,7 +203,19 @@ Configure → Public Hostnames → Add a public hostname**:
 - Domain: `eusoof.com`
 - Service: `HTTP` → `localhost:3001`
 
-This also creates the DNS record for you — skip 3d if you use this route.
+This also creates the DNS record for you — **skip 3d and 3e**. Remotely-managed
+config pushes to the running process within seconds; no restart needed. Delete
+any stale `parabola` hostname while you're in there.
+
+Then neutralise the dead local file, so it can't mislead you later:
+
+```bash
+sudo tee /etc/cloudflared/config.yml << 'EOF'
+tunnel: 93d6fb41-92d7-4aa3-833a-6d983cd57c3e
+# Ingress is managed in the Cloudflare dashboard (this replica runs with --token).
+# Zero Trust → Networks → Tunnels → nas-tunnel → Public Hostnames
+EOF
+```
 
 ### 3d. Create the DNS record (file-managed route only)
 
@@ -201,8 +237,18 @@ sudo nohup cloudflared --config /etc/cloudflared/config.yml tunnel run \
   > /volume1/docker/cloudflared/tunnel.log 2>&1 &
 ```
 
-Test: `https://epl.eusoof.com` should load (or hit the Access gate once Part 5
-is done). Check `tunnel.log` if not.
+### 3f. Verify — and prove there's only one replica
+
+```bash
+curl -I https://epl.eusoof.com
+
+# run this a few times: consistent codes = one replica
+for i in 1 2 3 4 5 6; do curl -s -o /dev/null -w "%{http_code} " https://epl.eusoof.com; done
+```
+
+Alternating between a good code and `404` means a second cloudflared is still
+running with different ingress — go back to 3a-bis. Check `tunnel.log` if
+nothing responds at all.
 
 ---
 
@@ -233,6 +279,7 @@ application → Self-hosted**:
 - **Session duration:** 1 month (fewer re-logins on phones)
 
 **Policy 1 — Allowed Users**
+
 - Action: **Allow**
 - Include → **Emails** → add each player's email address (same list as f1 is
   fine; you can also use an Access Group to share one list across both apps).
@@ -277,8 +324,8 @@ If the second command returns HTML, the bypass isn't applied yet.
 
 1. Open **https://epl.eusoof.com** → pass the Cloudflare email gate.
 2. Log into the app itself with the seeded admin: **`admin` / `password123`**.
-   - Cloudflare Access controls *who reaches the site*; the app's own login
-     controls *who you are inside it*. Two separate layers.
+   - Cloudflare Access controls _who reaches the site_; the app's own login
+     controls _who you are inside it_. Two separate layers.
 3. **Change the admin password immediately** (Admin → Users).
 4. Admin → Users: create a real account per player, delete/rename the demo
    `alice` / `bob` accounts.
@@ -355,12 +402,12 @@ appears only if the open season has no BetWeeks at all.
 
 `siglulutamu-deploy-notes.txt` contains live credentials in plaintext:
 
-| Secret | Action |
-|---|---|
+| Secret                           | Action                                                                                        |
+| -------------------------------- | --------------------------------------------------------------------------------------------- |
 | Cloudflare API token (`yUQXHU…`) | Revoke: My Profile → API Tokens → Delete. It was only needed for the one-time `tunnel login`. |
-| Tunnel token (`eyJhIjoiMzM3…`) | Full control of the tunnel. Rotate if that file was ever shared. |
-| f1picks `JWT_SECRET` | Rotate if shared (logs out f1 users once). |
-| `cert.pem` contents | Cloudflare origin cert — treat as a credential. |
+| Tunnel token (`eyJhIjoiMzM3…`)   | Full control of the tunnel. Rotate if that file was ever shared.                              |
+| f1picks `JWT_SECRET`             | Rotate if shared (logs out f1 users once).                                                    |
+| `cert.pem` contents              | Cloudflare origin cert — treat as a credential.                                               |
 
 `.gitignore` now blocks `*.txt`, so these won't reach GitHub. Verify:
 
@@ -392,26 +439,29 @@ cp /volume1/docker/paabola/data/paabola.db ~/paabola-backup-$(date +%F).db
 
 ## Troubleshooting
 
-| Symptom | Cause / fix |
-|---|---|
-| `Bind mount failed: '/volume1/docker/paabola/data' does not exists` | The host folder must exist first on DSM 7.1. `cd /volume1/docker/paabola && mkdir -p data`, then re-run `up -d --build` (the built image is cached; it starts in seconds). |
+| Symptom                                            | Cause / fix                                                                                                                                |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `port is already allocated` on `docker-compose up` | Host 3000 is f1picks. Confirm compose says `"3001:3000"` — that's the Part 1 fix; `git pull` on the NAS if you deployed before pushing it. |
-| `epl.eusoof.com` → Cloudflare **error 1033** | Tunnel isn't running or has no ingress rule for this hostname. Check `ps aux \| grep cloudflared` and `tunnel.log`. |
-| `epl.eusoof.com` → **502 Bad Gateway** | Tunnel is up but the container isn't. `sudo docker ps`, then `sudo docker logs <container>`. |
-| Login loops back to `/login`, never signs in | `NEXTAUTH_URL` in `.env` isn't `https://epl.eusoof.com`. Fix and `sudo docker-compose up -d`. |
-| TRMNL device shows an error / login screen | Access bypass for `/api/trmnl` missing — Part 5b. |
-| TRMNL shows another player's name highlighted | Wrong token on that device — regenerate and repaste. |
-| `next build` fails prerendering a page | A new DB-querying server page needs `export const dynamic = "force-dynamic"`. |
-| Admin → Import season refuses to run | The season already has picks (pre-season-only guard). Create a fresh open season and import into that. |
+| `epl.eusoof.com` returns **404 intermittently** | Two cloudflared processes are connected as replicas of the same tunnel with different ingress. `ps aux \| grep cloudflared`, kill the non-systemd one (Part 3a-bis). |
+| Edits to `/etc/cloudflared/config.yml` have no effect | The service runs with `--token`, so ingress is remotely-managed — edit it in the dashboard (Part 3c). |
+| `epl.eusoof.com` → Cloudflare **error 1033**       | Tunnel isn't running or has no ingress rule for this hostname. Check `ps aux \| grep cloudflared` and `tunnel.log`.                        |
+| `epl.eusoof.com` → **502 Bad Gateway**             | Tunnel is up but the container isn't. `sudo docker ps`, then `sudo docker logs <container>`.                                               |
+| Login loops back to `/login`, never signs in       | `NEXTAUTH_URL` in `.env` isn't `https://epl.eusoof.com`. Fix and `sudo docker-compose up -d`.                                              |
+| TRMNL device shows an error / login screen         | Access bypass for `/api/trmnl` missing — Part 5b.                                                                                          |
+| TRMNL shows another player's name highlighted      | Wrong token on that device — regenerate and repaste.                                                                                       |
+| `next build` fails prerendering a page             | A new DB-querying server page needs `export const dynamic = "force-dynamic"`.                                                              |
+| Admin → Import season refuses to run               | The season already has picks (pre-season-only guard). Create a fresh open season and import into that.                                     |
 
 ---
 
 ## Checklist
 
 - [ ] Push the port-3001 fix to GitHub (Part 1)
-- [ ] Clone to `/volume1/docker/paabola`, write `.env`, `mkdir -p data`, `docker-compose up -d --build` (Part 2)
+- [ ] Clone to `/volume1/docker/paabola`, write `.env`, `docker-compose up -d --build` (Part 2)
 - [ ] `curl -I http://localhost:3001` returns a redirect (Part 2)
-- [ ] Add `epl.eusoof.com → localhost:3001` ingress + DNS, restart tunnel (Part 3)
+- [ ] Kill the stray non-systemd cloudflared process (Part 3a-bis)
+- [ ] Add `epl.eusoof.com → localhost:3001` as a dashboard Public Hostname (Part 3c)
+- [ ] Confirm consistent responses — no 404 flapping (Part 3f)
 - [ ] GoDaddy — confirm nameservers only, change nothing (Part 4)
 - [ ] Access app "Paabola" with the allowed-email policy (Part 5a)
 - [ ] Access app "Paabola TRMNL" with **Bypass / Everyone** on path `api/trmnl` (Part 5b)
