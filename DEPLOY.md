@@ -137,25 +137,27 @@ ps aux | grep cloudflared
 sudo systemctl status cloudflared 2>/dev/null
 ```
 
-**Findings on this NAS (checked 2026-09-10):**
+**Settled on this NAS (checked 2026-09-11):**
 
-- The systemd service (root) runs with `--token`, which puts that replica in
-  **remotely-managed** mode: it pulls ingress from the Cloudflare edge and
-  **ignores the `ingress:` block** in the local `config.yml` it was pointed at.
-  So the stale `parabola.eusoof.com` entry there was never in effect.
-  → Use **3c** (dashboard), not 3b.
-- A **second, stray cloudflared** was also running as user `mseusoof` from
+- `nas-tunnel` is a **locally configured** tunnel — the Zero Trust dashboard
+  says so outright and offers only a Migrate button. So
+  **`/etc/cloudflared/config.yml` is the live config**, even though the systemd
+  service also passes `--token`. → Use **3b**, not 3c.
+- **Do not accept the Migrate offer.** It is irreversible and buys nothing when
+  you already have SSH access to the file.
+- A **second, stray cloudflared** was running as user `mseusoof` from
   `/volume1/docker/cloudflared/.cloudflared/config.yml` — a leftover from the
-  manual `nohup` runs. See 3a-bis.
+  manual `nohup` runs, now killed. See 3a-bis.
 
-Confirm the management mode:
+Confirm for yourself:
 
 ```bash
-sudo cloudflared tunnel info nas-tunnel
+sudo cloudflared tunnel info nas-tunnel   # expect exactly ONE connector row
 ```
 
-Then check Zero Trust → Networks → Tunnels → nas-tunnel. A populated
-**Public Hostnames** tab means remotely-managed, and the dashboard wins.
+Zero Trust → Networks → Tunnels → nas-tunnel: "cannot be managed from the Zero
+Trust dashboard as it is a locally configured tunnel" confirms local mode. A
+populated **Public Hostnames** tab instead would mean remotely-managed (3c).
 
 ### 3a-bis. Kill any duplicate cloudflared process
 
@@ -194,7 +196,7 @@ EOF
 
 Order matters: the catch-all `http_status:404` must stay last.
 
-### 3c. Add the hostname in the dashboard (token-managed tunnel) — use this one
+### 3c. Alternative: dashboard (only for a remotely-managed tunnel)
 
 Cloudflare dashboard → **Zero Trust → Networks → Tunnels → nas-tunnel →
 Configure → Public Hostnames → Add a public hostname**:
@@ -203,19 +205,9 @@ Configure → Public Hostnames → Add a public hostname**:
 - Domain: `eusoof.com`
 - Service: `HTTP` → `localhost:3001`
 
-This also creates the DNS record for you — **skip 3d and 3e**. Remotely-managed
-config pushes to the running process within seconds; no restart needed. Delete
-any stale `parabola` hostname while you're in there.
-
-Then neutralise the dead local file, so it can't mislead you later:
-
-```bash
-sudo tee /etc/cloudflared/config.yml << 'EOF'
-tunnel: 93d6fb41-92d7-4aa3-833a-6d983cd57c3e
-# Ingress is managed in the Cloudflare dashboard (this replica runs with --token).
-# Zero Trust → Networks → Tunnels → nas-tunnel → Public Hostnames
-EOF
-```
+This also creates the DNS record, so you would skip 3d. **Not applicable to this
+NAS** — nas-tunnel is locally configured, so this tab isn't available without an
+irreversible migration. Recorded here only in case the tunnel is ever migrated.
 
 ### 3d. Create the DNS record (file-managed route only)
 
@@ -443,7 +435,7 @@ cp /volume1/docker/paabola/data/paabola.db ~/paabola-backup-$(date +%F).db
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `port is already allocated` on `docker-compose up` | Host 3000 is f1picks. Confirm compose says `"3001:3000"` — that's the Part 1 fix; `git pull` on the NAS if you deployed before pushing it. |
 | `epl.eusoof.com` returns **404 intermittently** | Two cloudflared processes are connected as replicas of the same tunnel with different ingress. `ps aux \| grep cloudflared`, kill the non-systemd one (Part 3a-bis). |
-| Edits to `/etc/cloudflared/config.yml` have no effect | The service runs with `--token`, so ingress is remotely-managed — edit it in the dashboard (Part 3c). |
+| Edits to `/etc/cloudflared/config.yml` have no effect | Confirm the tunnel is locally configured (Part 3a). If the dashboard shows a Public Hostnames tab instead, ingress is remote and the file is inert. Also confirm you restarted: `sudo systemctl restart cloudflared`. |
 | `epl.eusoof.com` → Cloudflare **error 1033**       | Tunnel isn't running or has no ingress rule for this hostname. Check `ps aux \| grep cloudflared` and `tunnel.log`.                        |
 | `epl.eusoof.com` → **502 Bad Gateway**             | Tunnel is up but the container isn't. `sudo docker ps`, then `sudo docker logs <container>`.                                               |
 | Login loops back to `/login`, never signs in       | `NEXTAUTH_URL` in `.env` isn't `https://epl.eusoof.com`. Fix and `sudo docker-compose up -d`.                                              |
@@ -460,7 +452,8 @@ cp /volume1/docker/paabola/data/paabola.db ~/paabola-backup-$(date +%F).db
 - [ ] Clone to `/volume1/docker/paabola`, write `.env`, `docker-compose up -d --build` (Part 2)
 - [ ] `curl -I http://localhost:3001` returns a redirect (Part 2)
 - [ ] Kill the stray non-systemd cloudflared process (Part 3a-bis)
-- [ ] Add `epl.eusoof.com → localhost:3001` as a dashboard Public Hostname (Part 3c)
+- [ ] Add `epl.eusoof.com → localhost:3001` to `/etc/cloudflared/config.yml` (Part 3b)
+- [ ] Route DNS and restart the tunnel (Parts 3d, 3e)
 - [ ] Confirm consistent responses — no 404 flapping (Part 3f)
 - [ ] GoDaddy — confirm nameservers only, change nothing (Part 4)
 - [ ] Access app "Paabola" with the allowed-email policy (Part 5a)
