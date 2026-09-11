@@ -93,6 +93,14 @@ cat .env   # confirm it looks right
   https://www.football-data.org/client/register. Needed only for Admin →
   Schedule "Import season" / "Sync results". Leave blank to set up later.
 
+Create the data directory **before** the first start. Docker 20.10 on DSM 7.1
+does not auto-create bind-mount source directories, and the container refuses to
+start without it:
+
+```bash
+mkdir -p data
+```
+
 Build and start (DSM 7.1 uses the hyphenated `docker-compose`):
 
 ```bash
@@ -386,6 +394,7 @@ cp /volume1/docker/paabola/data/paabola.db ~/paabola-backup-$(date +%F).db
 
 | Symptom | Cause / fix |
 |---|---|
+| `Bind mount failed: '/volume1/docker/paabola/data' does not exists` | The host folder must exist first on DSM 7.1. `cd /volume1/docker/paabola && mkdir -p data`, then re-run `up -d --build` (the built image is cached; it starts in seconds). |
 | `port is already allocated` on `docker-compose up` | Host 3000 is f1picks. Confirm compose says `"3001:3000"` — that's the Part 1 fix; `git pull` on the NAS if you deployed before pushing it. |
 | `epl.eusoof.com` → Cloudflare **error 1033** | Tunnel isn't running or has no ingress rule for this hostname. Check `ps aux \| grep cloudflared` and `tunnel.log`. |
 | `epl.eusoof.com` → **502 Bad Gateway** | Tunnel is up but the container isn't. `sudo docker ps`, then `sudo docker logs <container>`. |
@@ -400,7 +409,7 @@ cp /volume1/docker/paabola/data/paabola.db ~/paabola-backup-$(date +%F).db
 ## Checklist
 
 - [ ] Push the port-3001 fix to GitHub (Part 1)
-- [ ] Clone to `/volume1/docker/paabola`, write `.env`, `docker-compose up -d --build` (Part 2)
+- [ ] Clone to `/volume1/docker/paabola`, write `.env`, `mkdir -p data`, `docker-compose up -d --build` (Part 2)
 - [ ] `curl -I http://localhost:3001` returns a redirect (Part 2)
 - [ ] Add `epl.eusoof.com → localhost:3001` ingress + DNS, restart tunnel (Part 3)
 - [ ] GoDaddy — confirm nameservers only, change nothing (Part 4)
