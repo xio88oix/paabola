@@ -424,10 +424,97 @@ appears only if the open season has no BetWeeks at all.
 
 | Secret                           | Action                                                                                        |
 | -------------------------------- | --------------------------------------------------------------------------------------------- |
-| Cloudflare API token (`yUQXHU…`) | Revoke: My Profile → API Tokens → Delete. It was only needed for the one-time `tunnel login`. |
-| Tunnel token (`eyJhIjoiMzM3…`)   | Full control of the tunnel. Rotate if that file was ever shared. **Also visible in `ps aux` output** (systemd passes `--token`) — it was pasted into a chat session on 2026-10-11, so rotate it. |
+| Cloudflare API token (`yUQXHU…`) | ✅ Revoked 2026-10-11 (token named "Cloudflasre", Account.Cloudflare Tunnel). See 8b.        |
+| Tunnel token (`eyJhIjoiMzM3…`)   | ✅ Rotated 2026-10-11 (old one was in the notes file and pasted into a chat session). Procedure in 8a. The live token is visible to anyone who can run `ps aux` on the NAS, because systemd passes it as `--token`. |
 | f1picks `JWT_SECRET`             | Rotate if shared (logs out f1 users once).                                                    |
 | `cert.pem` contents              | Cloudflare origin cert — treat as a credential.                                               |
+
+### 8a. Rotate the tunnel token
+
+`nas-tunnel` is locally configured, so the dashboard has no rotate button —
+rotate the **tunnel secret** through the API, rebuild the token from it, and
+swap it into the systemd unit. The old token dies the moment the API call
+succeeds; both f1 and epl are down for a few seconds until the restart.
+
+1. **Temporary API token** — Cloudflare dashboard → My Profile → API Tokens →
+   Create Token → Custom token. Permission **Account → Cloudflare Tunnel →
+   Edit**, your account, TTL today.
+
+2. **Set a new secret** (on the NAS):
+
+   ```bash
+   ssh mseusoof@192.168.1.45
+   sudo -i
+
+   systemctl cat cloudflared | grep ExecStart     # first line of output = unit file path
+   OLD=$(systemctl cat cloudflared | grep -o -- '--token [^ ]*' | cut -d' ' -f2)
+   ACC=$(echo "$OLD" | base64 -d | grep -o '"a":"[^"]*"' | cut -d'"' -f4)
+   TUN=93d6fb41-92d7-4aa3-833a-6d983cd57c3e
+   echo "$ACC"                                    # 32-char hex account ID
+
+   read -s -p "API token: " CFT; echo             # keeps it out of shell history
+   SECRET=$(openssl rand -base64 32)
+
+   curl -s -X PATCH "https://api.cloudflare.com/client/v4/accounts/$ACC/cfd_tunnel/$TUN" \
+     -H "Authorization: Bearer $CFT" -H "Content-Type: application/json" \
+     --data "{\"tunnel_secret\":\"$SECRET\"}" | grep -o '"success":[a-z]*'
+   ```
+
+   Expect `"success":true`. On `false`, stop and rerun without `| grep` to see
+   the error — the old secret is still valid at that point.
+
+3. **Build the new token:**
+
+   ```bash
+   NEW=$(printf '{"a":"%s","t":"%s","s":"%s"}' "$ACC" "$TUN" "$SECRET" | base64 | tr -d '\n')
+   ```
+
+4. **Swap it into the unit and restart:**
+
+   ```bash
+   UNIT=/etc/systemd/system/cloudflared.service   # path from step 2
+   cp "$UNIT" "$UNIT.bak"
+   sed -i "s|--token $OLD|--token $NEW|" "$UNIT"
+   grep -c "$NEW" "$UNIT"                         # expect 1
+   systemctl daemon-reload && systemctl restart cloudflared
+   ```
+
+5. **Verify:**
+
+   ```bash
+   curl -sI https://f1.eusoof.com | head -1                       # 302 (Access login)
+   curl -s "https://epl.eusoof.com/api/trmnl/results?token=BAD"   # {"error":"Invalid token"}
+   ```
+
+   If the tunnel doesn't come back: `journalctl -u cloudflared -n 30`.
+
+6. **Clean up:**
+
+   ```bash
+   rm "$UNIT.bak"                                 # holds the old token
+   unset CFT SECRET OLD NEW; exit
+   ```
+
+   Then delete the temporary API token (8b). The old credentials file
+   `/volume1/docker/cloudflared/.cloudflared/93d6fb41-….json` holds the old,
+   now-dead secret — harmless, keep or delete.
+
+### 8b. Which Cloudflare API tokens to keep
+
+My Profile → API Tokens. Deleting an API token never affects the running
+tunnel — it connects with the tunnel token in the systemd unit, not an API
+token.
+
+| Token name                                                  | What it is                                                                 | Action                                     |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------ |
+| Temporary custom token from 8a step 1                       | Rotation only                                                              | **Delete** once 8a verifies                |
+| "Cloudflasre" (Account.Cloudflare Tunnel)                   | The old `yUQXHU…` setup token from the notes file                          | ✅ Deleted 2026-10-11                      |
+| "Cloudflare Tunnel API Token for eusoof.com in … Account" ×2 | Auto-created by `cloudflared tunnel login`, one per `cert.pem`            | **Keep** — `cert.pem` needs it for Part 3d (`tunnel route dns`) and `tunnel info` |
+| "Cloudflare Agent (auto-generated)"                         | Created by Cloudflare itself, not part of this deployment                  | Leave alone                                |
+
+Optional: `cert.pem` contents are in the old notes file, so one of the two
+`tunnel login` tokens is exposed. To clean that up, delete both, then run
+`sudo cloudflared tunnel login` on the NAS once to issue a fresh `cert.pem`.
 
 `.gitignore` now blocks `*.txt`, so these won't reach GitHub. Verify:
 
