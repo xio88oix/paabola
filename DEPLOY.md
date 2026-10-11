@@ -13,7 +13,7 @@ Cloudflare  ── f1.eusoof.com ──┐
         ↓                      │
 Cloudflare Tunnel "nas-tunnel" │  (no open router ports)
         ↓                      │
-Synology NAS (192.168.1.57)    │
+Synology NAS (192.168.1.45)    │  (DHCP-reserved — see Part 2)
   ├── f1picks  → host :3000 ───┘
   └── paabola  → host :3001
 ```
@@ -59,8 +59,13 @@ git push
 SSH in from your Mac:
 
 ```bash
-ssh mseusoof@192.168.1.57
+ssh mseusoof@192.168.1.45
 ```
+
+> **NAS IP:** `192.168.1.45` (was `.57` until a router reboot on 2026-10-10
+> handed out a new DHCP lease). Reserve the address in the router's DHCP
+> settings so it stops moving. After an IP change, the first `ssh` warns about
+> an unknown host key — that's expected.
 
 Clone into its own folder (alongside `f1picks`):
 
@@ -146,8 +151,9 @@ sudo systemctl status cloudflared 2>/dev/null
 - **Do not accept the Migrate offer.** It is irreversible and buys nothing when
   you already have SSH access to the file.
 - A **second, stray cloudflared** was running as user `mseusoof` from
-  `/volume1/docker/cloudflared/.cloudflared/config.yml` — a leftover from the
-  manual `nohup` runs, now killed. See 3a-bis.
+  `/volume1/docker/cloudflared/.cloudflared/config.yml` — launched at every
+  boot by a **DSM Task Scheduler** task. Killing the process is not enough;
+  the task must go too. See 3a-bis.
 
 Confirm for yourself:
 
@@ -173,8 +179,31 @@ sudo kill <PID-of-the-non-systemd-one>
 ps aux | grep cloudflared   # only the root/systemd process should remain
 ```
 
-Keep the **systemd** one — it's `enabled`, so it survives a reboot. The manually
-launched one does not.
+Keep the **systemd** one — it's `enabled`, so it survives a reboot.
+
+**Then remove whatever relaunches the stray one, or it comes back on the next
+reboot.** On this NAS it was a DSM boot task:
+
+- DSM → **Control Panel → Task Scheduler** → task **"Cloudflare Tunnel"**
+  (user `mseusoof`, event **Boot-up**, script
+  `nohup cloudflared --config /volume1/docker/cloudflared/.cloudflared/config.yml tunnel run > …/tunnel.log 2>&1 &`)
+  → **delete it**. systemd already starts the tunnel at boot.
+- Also check `crontab -l` and `sudo grep -i cloudflared /etc/crontab` (both
+  empty on this NAS as of 2026-10-11).
+
+Backstop — disable the stray config so nothing can start a second replica from
+it (keep `cert.pem` and the credentials `.json`; Part 3d uses `cert.pem`):
+
+```bash
+mv /volume1/docker/cloudflared/.cloudflared/config.yml \
+   /volume1/docker/cloudflared/.cloudflared/config.yml.disabled
+```
+
+> **Incident 2026-10-11:** after the NAS restarted on 2026-10-10, the boot task
+> relaunched the stray instance. Its config has no `epl` rule, and Cloudflare
+> sent every epl request to it → a **consistent** 404 (not intermittent), while
+> f1 kept working because both configs list f1. Fixed by killing it and
+> deleting the boot task.
 
 ### 3b. Edit the config (file-managed tunnel)
 
@@ -223,11 +252,10 @@ If it says the record already exists, that's fine.
 
 ```bash
 sudo systemctl restart cloudflared
-# or, if you run it manually:
-sudo pkill cloudflared
-sudo nohup cloudflared --config /etc/cloudflared/config.yml tunnel run \
-  > /volume1/docker/cloudflared/tunnel.log 2>&1 &
 ```
+
+Don't start cloudflared by hand with `nohup` (or from a DSM task) — that's how
+the duplicate replica in 3a-bis was created.
 
 ### 3f. Verify — and prove there's only one replica
 
@@ -397,7 +425,7 @@ appears only if the open season has no BetWeeks at all.
 | Secret                           | Action                                                                                        |
 | -------------------------------- | --------------------------------------------------------------------------------------------- |
 | Cloudflare API token (`yUQXHU…`) | Revoke: My Profile → API Tokens → Delete. It was only needed for the one-time `tunnel login`. |
-| Tunnel token (`eyJhIjoiMzM3…`)   | Full control of the tunnel. Rotate if that file was ever shared.                              |
+| Tunnel token (`eyJhIjoiMzM3…`)   | Full control of the tunnel. Rotate if that file was ever shared. **Also visible in `ps aux` output** (systemd passes `--token`) — it was pasted into a chat session on 2026-10-11, so rotate it. |
 | f1picks `JWT_SECRET`             | Rotate if shared (logs out f1 users once).                                                    |
 | `cert.pem` contents              | Cloudflare origin cert — treat as a credential.                                               |
 
@@ -413,7 +441,7 @@ git log --all --oneline -- '*deploy-notes*'   # should print nothing
 ## Updating the app later
 
 ```bash
-ssh mseusoof@192.168.1.57
+ssh mseusoof@192.168.1.45
 cd /volume1/docker/paabola
 git pull
 sudo docker-compose up -d --build
@@ -434,7 +462,8 @@ cp /volume1/docker/paabola/data/paabola.db ~/paabola-backup-$(date +%F).db
 | Symptom                                            | Cause / fix                                                                                                                                |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `port is already allocated` on `docker-compose up` | Host 3000 is f1picks. Confirm compose says `"3001:3000"` — that's the Part 1 fix; `git pull` on the NAS if you deployed before pushing it. |
-| `epl.eusoof.com` returns **404 intermittently** | Two cloudflared processes are connected as replicas of the same tunnel with different ingress. `ps aux \| grep cloudflared`, kill the non-systemd one (Part 3a-bis). |
+| `epl.eusoof.com` returns **404** (intermittent *or* every time), f1 fine | Two cloudflared processes are connected as replicas of the same tunnel with different ingress. `ps aux \| grep cloudflared`, kill the non-systemd one, and delete the DSM Task Scheduler boot task that relaunches it (Part 3a-bis). Typically appears after a NAS reboot. Quick test bypassing Access: `curl -s "https://epl.eusoof.com/api/trmnl/results?token=BAD"` → JSON = app reachable; empty 404 = tunnel has no epl rule. |
+| `ssh` to the NAS times out | NAS IP changed after a router reboot. Find it in the router's DHCP client list (currently `192.168.1.45`) and reserve it. |
 | Edits to `/etc/cloudflared/config.yml` have no effect | Confirm the tunnel is locally configured (Part 3a). If the dashboard shows a Public Hostnames tab instead, ingress is remote and the file is inert. Also confirm you restarted: `sudo systemctl restart cloudflared`. |
 | `epl.eusoof.com` → Cloudflare **error 1033**       | Tunnel isn't running or has no ingress rule for this hostname. Check `ps aux \| grep cloudflared` and `tunnel.log`.                        |
 | `epl.eusoof.com` → **502 Bad Gateway**             | Tunnel is up but the container isn't. `sudo docker ps`, then `sudo docker logs <container>`.                                               |
@@ -451,7 +480,8 @@ cp /volume1/docker/paabola/data/paabola.db ~/paabola-backup-$(date +%F).db
 - [ ] Push the port-3001 fix to GitHub (Part 1)
 - [ ] Clone to `/volume1/docker/paabola`, write `.env`, `docker-compose up -d --build` (Part 2)
 - [ ] `curl -I http://localhost:3001` returns a redirect (Part 2)
-- [ ] Kill the stray non-systemd cloudflared process (Part 3a-bis)
+- [ ] Kill the stray non-systemd cloudflared process **and delete its DSM boot task** (Part 3a-bis)
+- [ ] Reserve the NAS IP (`192.168.1.45`) in the router's DHCP settings (Part 2)
 - [ ] Add `epl.eusoof.com → localhost:3001` to `/etc/cloudflared/config.yml` (Part 3b)
 - [ ] Route DNS and restart the tunnel (Parts 3d, 3e)
 - [ ] Confirm consistent responses — no 404 flapping (Part 3f)
